@@ -1,79 +1,84 @@
-# 部署到云端服务器（前后端一起）
+# 部署到云端服务器（手动部署）
 
-本文档手把手把「便利工具站」部署到一台 Linux 云服务器（VPS）。推荐 **方案 A：Docker Compose 一键部署**（最省心，依赖都在容器里）。文末附 **方案 B：不用 Docker 的手动部署**。
+本文档手把手把「便利工具站」部署到一台 **Ubuntu 22.04** 云服务器（VPS）。采用**手动部署**（不使用 Docker——国内网络下 Docker 拉取依赖极慢，基本无法完成）。
 
----
-
-## 0. 准备工作
-
-- 一台云服务器（阿里云 / 腾讯云 / AWS EC2 / DigitalOcean 均可），系统建议 **Ubuntu 22.04 LTS**，配置 ≥ 1核2G（转换视频/Office 时越大越好）。
-- 拿到服务器的 **公网 IP** 和 **SSH 登录方式**（密码或密钥）。
-- （可选）一个 **域名**，并把它的 A 记录解析到服务器公网 IP。
-- 在云厂商控制台的 **安全组 / 防火墙** 放行入站端口：**22（SSH）、80（HTTP）**，如需 HTTPS 再放行 **443**。
-
-> 下面命令里的 `你的服务器IP`、`your-domain.com` 请替换成自己的。
+> 更新已部署的站点：直接看最后的 **[八、日常更新](#八日常更新一键脚本)**。
 
 ---
 
-## 方案 A：Docker Compose 一键部署（推荐）
+## 一、准备工作
 
-### A1. 登录服务器
+- 一台云服务器，系统建议 **Ubuntu 22.04 LTS**，配置 ≥ 1核2G（转换视频/Office 时越大越好）。
+- 拿到服务器 **公网 IP** 和 SSH 登录方式。
+- （可选但推荐）一个 **域名** + 一份 **SSL 证书**（云厂商可免费申请下载）。
+- 云厂商 **安全组/防火墙** 放行入站：**22（SSH）、80（HTTP）、443（HTTPS）**。
 
-在你自己的电脑上（PowerShell / 终端）：
+SSH 登录服务器：
 
 ```bash
 ssh root@你的服务器IP
 ```
 
-### A2. 安装 Docker 与 Docker Compose
+---
+
+## 二、安装系统依赖
 
 ```bash
-# 一条命令安装 Docker（官方脚本）
-curl -fsSL https://get.docker.com | sh
+apt update
+apt install -y python3 python3-venv git nginx \
+    libreoffice ffmpeg fonts-noto-cjk curl
 
-# 验证
-docker --version
-docker compose version
+# Node.js 20
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt install -y nodejs
+
+# uv（Python 包管理）
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
 ```
 
-> 若使用非 root 用户，把当前用户加入 docker 组：`sudo usermod -aG docker $USER`，然后重新登录。
-
-### A3. 用 Git 把项目代码放到服务器（推荐）
-
-**先在你的本地电脑**把代码推送到 Git 远程仓库（GitHub / Gitee / 自建 GitLab 均可）。项目已配好 `.gitignore`（自动排除 `node_modules`、`.venv`、`data`、`dist` 等，不会把这些传上去）。在项目根目录执行：
+**国内加速（强烈建议，避免下载慢）：**
 
 ```bash
-git init
-git add .
-git commit -m "init: party2web"
-git branch -M main
-git remote add origin <你的仓库地址>
-git push -u origin main
+# npm 使用国内镜像
+npm config set registry https://registry.npmmirror.com
+
+# uv/pip 使用清华镜像（写入环境变量，当前会话与后续都生效）
+echo 'export UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple' >> ~/.bashrc
+source ~/.bashrc
 ```
 
-> 以上 `git commit` / `git push` 由你自行执行。
+验证：`node -v`（应 v20.x）、`uv --version`、`soffice --version`、`ffmpeg -version`。
 
-**然后在服务器上** clone：
+---
+
+## 三、获取代码
 
 ```bash
-cd /opt
+mkdir -p /root/opt
+cd /root/opt
 git clone <你的仓库地址> party2web
 cd party2web
 ```
 
-> 私有仓库需要在服务器配置访问凭据（HTTPS 用 token，或 SSH 部署密钥）。后续更新只需在服务器执行 `git pull`（见 A8）。
+> 私有仓库需配置访问凭据（HTTPS 用 token，或 SSH 部署密钥）。
+> ⚠️ 代码放在 `/root/opt/...` 下没问题，但**前端静态文件不能直接由 nginx 从 `/root` 读取**（`/root` 权限受限，会 403）。所以第五步会把前端产物复制到 `/var/www/...`。
 
-### A4. （重要）配置管理员密码与密钥（.env）
+---
 
-管理员账号密码与会话密钥**不写在代码里**，而是通过 `backend/.env` 提供（该文件已被 `.gitignore` 排除，不会进仓库）。在服务器上：
+## 四、部署后端
+
+### 4.1 配置密码与密钥（.env）
+
+管理员账号密码与会话密钥**不写在代码里**，通过 `backend/.env` 提供（已被 `.gitignore` 排除）：
 
 ```bash
-cd /opt/party2web/backend
+cd /root/opt/party2web/backend
 cp .env.example .env
-nano .env        # 填入强密码与随机密钥
+nano .env
 ```
 
-`.env` 内容示例：
+填入（生产务必用强口令与随机密钥）：
 
 ```ini
 ADMIN_USERNAME=root
@@ -81,154 +86,16 @@ ADMIN_PASSWORD=你的强密码
 SECRET_KEY=用下面命令生成的随机串
 ```
 
-> 生成随机密钥：`python3 -c "import secrets;print(secrets.token_hex(32))"`
+生成随机密钥：`python3 -c "import secrets;print(secrets.token_hex(32))"`
 
-`docker-compose.yml` 已配置后端从 `backend/.env` 读取这些变量，因此**必须先创建 `.env` 再启动**（否则 compose 会因找不到 env 文件而报错）。
-
-### A5. 一键构建并启动
+### 4.2 安装依赖并用 systemd 常驻
 
 ```bash
-cd /opt/party2web
-docker compose up -d --build
-```
-
-- 首次构建会下载基础镜像、安装 LibreOffice/ffmpeg，**耗时约 5–15 分钟**，请耐心等待。
-- 完成后查看状态：
-
-```bash
-docker compose ps          # 两个服务都应为 running/healthy
-docker compose logs -f     # 看实时日志，Ctrl+C 退出
-```
-
-### A6. 访问
-
-浏览器打开 **`http://你的服务器IP`** 即可看到网站。
-
-- 左侧栏底部「设置」→ 打开管理员模式 → 用你在 A4 设置的账号密码登录。
-- 首次进入可在「赞助页 → 站点信息」里修改网站名称、位置、月流量额度。
-
-至此前后端都已部署完成 ✅（前端 nginx 容器对外，后端容器只在内网，由 nginx 反代 `/api` 和 `/uploads`）。
-
----
-
-## A7. 绑定域名（让访问你的域名就能直接打开网站）
-
-### 第一步：让域名解析到服务器（DNS A 记录）
-
-这一步是「访问域名就能打开网站」的关键——把域名指向你服务器的公网 IP。
-
-1. 登录你**购买域名的服务商**控制台（阿里云 / 腾讯云 / GoDaddy / Namecheap 等），找到 **「DNS 解析 / 域名解析 / DNS 管理」**。
-2. 添加下面两条 **A 记录**（把 `你的服务器公网IP` 换成实际 IP）：
-
-   | 主机记录(Host) | 类型(Type) | 记录值(Value) | 作用 |
-   |---|---|---|---|
-   | `@` | A | 你的服务器公网IP | 根域名 `your-domain.com` |
-   | `www` | A | 你的服务器公网IP | `www.your-domain.com` |
-
-   > `@` 代表根域名本身。也可把 `www` 设成 CNAME 指向 `your-domain.com`，效果一样。TTL 用默认（如 600 秒）即可。
-
-3. 保存。DNS 生效通常几分钟，最长可能几小时。
-4. **验证解析是否生效**（在你自己电脑上）：
-   ```bash
-   ping your-domain.com          # 看返回的 IP 是不是你的服务器 IP
-   # 或
-   nslookup your-domain.com
-   ```
-5. 确认云厂商**安全组 / 防火墙**已放行入站 **80**（HTTP）和 **443**（HTTPS）。
-
-做完这一步，因为前端 nginx 容器监听 80 端口，浏览器访问 **`http://your-domain.com`** 就能直接打开网站了。
-
-> 没有域名时，直接用 **`http://你的服务器公网IP`** 访问也一样能用。
-
-### 第二步：开启 HTTPS（强烈建议，让地址变成 https://）
-
-最简单的方式是在前面再加一层 **Caddy**（自动申请并续期免费证书）。在服务器上：
-
-```bash
-# 1. 安装 Caddy
-apt install -y debian-keyring debian-archive-keyring apt-transport-https
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
-apt update && apt install -y caddy
-```
-
-把 compose 里前端端口改成不占用 80（例如 `8080:80`），然后重启：
-
-```bash
-# 编辑 docker-compose.yml，把 frontend 的 ports 改为 "8080:80"
-docker compose up -d
-```
-
-编辑 `/etc/caddy/Caddyfile`：
-
-```
-your-domain.com {
-    reverse_proxy localhost:8080
-}
-```
-
-重载 Caddy：
-
-```bash
-systemctl reload caddy
-```
-
-现在访问 **`https://your-domain.com`** 即为自动 HTTPS。
-
-> 说明：ffmpeg.wasm 依赖的跨源隔离头（COOP/COEP）已在前端 nginx 里发送，Caddy 反代会透传，无需额外配置。
-
----
-
-## A8. 日常运维
-
-**更新代码后重新部署：**
-```bash
-cd /opt/party2web
-git pull                       # 拉取最新代码（本地已 push 后）
-docker compose up -d --build
-```
-
-**数据备份**（SQLite + 上传文件都在 `backend/data/`）：
-```bash
-tar czf party2web-backup-$(date +%F).tar.gz /opt/party2web/backend/data
-```
-
-**查看/重启/停止：**
-```bash
-docker compose logs -f backend     # 后端日志（转换报错在这里看）
-docker compose restart backend
-docker compose down                # 停止全部（数据保留在 data 卷）
-```
-
----
-
-## 方案 B：不用 Docker 的手动部署
-
-适合不想用 Docker 的情况。以 Ubuntu 22.04 为例。
-
-### B1. 安装系统依赖
-
-```bash
-apt update
-apt install -y python3 python3-venv nginx git \
-    libreoffice ffmpeg fonts-noto-cjk curl
-# 安装 uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
-source $HOME/.local/bin/env
-# 安装 Node.js 20
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt install -y nodejs
-```
-
-### B2. 部署后端
-
-```bash
-cd /opt/party2web/backend
+cd /root/opt/party2web/backend
 uv sync
-# 创建 .env 配置管理员密码与 SECRET_KEY（同 A4）： cp .env.example .env 并编辑
 ```
 
-用 systemd 常驻后端，新建 `/etc/systemd/system/party2web.service`：
+新建 `/etc/systemd/system/party2web.service`：
 
 ```ini
 [Unit]
@@ -236,7 +103,7 @@ Description=Party2Web Backend
 After=network.target
 
 [Service]
-WorkingDirectory=/opt/party2web/backend
+WorkingDirectory=/root/opt/party2web/backend
 ExecStart=/root/.local/bin/uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 Restart=always
 User=root
@@ -250,73 +117,133 @@ WantedBy=multi-user.target
 ```bash
 systemctl daemon-reload
 systemctl enable --now party2web
-systemctl status party2web       # 应为 active (running)
+systemctl status party2web        # 应为 active (running)
+curl http://127.0.0.1:8000/api/health   # 应返回 {"ok":true}
 ```
 
-### B3. 构建前端
+> 首次启动会自动建库并写入初始分类/工具/站点信息（数据库文件在 `backend/data/`）。
+
+---
+
+## 五、构建并部署前端
 
 ```bash
-cd /opt/party2web/frontend
-npm ci
-npm run build                    # 产物在 dist/
+cd /root/opt/party2web/frontend
+npm install
+npm run build          # 产物在 dist/（构建脚本会自动把 ffmpeg 核心复制进去）
+
+# 复制到 nginx 可读目录
+mkdir -p /var/www/party2web/frontend/dist
+cp -r dist/. /var/www/party2web/frontend/dist/
+chown -R www-data:www-data /var/www/party2web
 ```
 
-### B4. 配置 nginx
+> 说明：本项目的音视频转换用浏览器内的 ffmpeg.wasm，其核心文件已**自托管**（构建时复制到 `dist/ffmpeg/`），不依赖国外 CDN；PDF 缩略图用 pdf.js（worker 是 `.mjs`，nginx 配置里已处理其 MIME）。
 
-新建 `/etc/nginx/sites-available/party2web`：
+---
 
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;   # 或直接用 _ 匹配 IP 访问
-    root /opt/party2web/frontend/dist;
-    index index.html;
+## 六、让域名指向服务器（DNS 解析）
 
-    add_header Cross-Origin-Opener-Policy same-origin always;
-    add_header Cross-Origin-Embedder-Policy credentialless always;
-    client_max_body_size 120m;
+在你**购买域名的服务商**控制台 → 「DNS 解析」，添加两条 **A 记录**：
 
-    location /api/     { proxy_pass http://127.0.0.1:8000; proxy_read_timeout 300s; }
-    location /uploads/ { proxy_pass http://127.0.0.1:8000; }
-    location /         { try_files $uri $uri/ /index.html; }
-}
+| 主机记录 | 类型 | 记录值 |
+|---|---|---|
+| `@` | A | 你的服务器公网IP |
+| `www` | A | 你的服务器公网IP |
+
+保存后等待生效（几分钟到几小时）。验证：本地 `ping your-domain.com` 看是否返回你的 IP。没有域名时也可直接用 `https://服务器IP`（证书会告警）。
+
+---
+
+## 七、配置 nginx + HTTPS
+
+### 7.1 放置 SSL 证书
+
+从云厂商下载 Nginx 版证书（通常是 `xxx_bundle.crt` + `xxx.key`），上传到服务器，例如：
+
+```bash
+mkdir -p /etc/ssl/your-domain
+# 把 your-domain_bundle.crt 和 your-domain.key 放进该目录
 ```
+
+> 也可用 Let's Encrypt 免费证书：`apt install -y certbot python3-certbot-nginx && certbot --nginx -d your-domain.com`（会自动改 nginx 配置并续期）。
+
+### 7.2 写站点配置
+
+仓库根目录提供了参考文件 **`nginx.conf.example`**，直接用它：
+
+```bash
+cp /root/opt/party2web/nginx.conf.example /etc/nginx/sites-available/party2web
+nano /etc/nginx/sites-available/party2web     # 改 server_name 和证书路径
+```
+
+该配置已包含所有踩过的坑的修复：
+
+- **强制 HTTP→HTTPS**，避免混合内容；
+- `root` 指向 `/var/www/party2web/frontend/dist`（nginx 可读）；
+- **`.mjs` MIME 修复**（否则 pdf.js worker 加载失败）；
+- **COOP/COEP 跨源隔离头**（ffmpeg.wasm 需要）；
+- `client_max_body_size 120m`（大文件上传）；
+- `/api/`、`/uploads/` 反代到后端 `127.0.0.1:8000`；
+- SPA 路由回退到 `index.html`。
 
 启用并重载：
 
 ```bash
-ln -s /etc/nginx/sites-available/party2web /etc/nginx/sites-enabled/
-nginx -t && systemctl reload nginx
+ln -sf /etc/nginx/sites-available/party2web /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default      # 去掉默认站点（可选）
+nginx -t                                     # 语法检查
+systemctl reload nginx
 ```
 
-### B5.（可选）HTTPS
-
-```bash
-apt install -y certbot python3-certbot-nginx
-certbot --nginx -d your-domain.com
-```
-
-访问 `http://你的服务器IP` 或 `https://your-domain.com` 即可。
+浏览器打开 **`https://your-domain.com`** 即可访问 ✅。左侧栏底部「设置」→ 开启管理员模式 → 用 4.1 里设置的账号密码登录。
 
 ---
 
-## 常见问题排查
+## 八、日常更新（一键脚本）
+
+以后本地改完代码 `git push` 后，在**服务器**上更新只需：
+
+```bash
+cd /root/opt/party2web
+git pull                 # 首次用脚本前先拉一次，拿到 update.sh
+chmod +x update.sh
+./update.sh
+```
+
+`update.sh` 会自动完成：拉取代码 → `uv sync` → `npm install && npm run build` → 把 `dist` 同步到 `/var/www/...` → 重启后端 → 重载 nginx。
+
+> 若你的路径与脚本默认值不同，编辑 `update.sh` 顶部的 `REPO` / `WEBROOT` / `SERVICE` 三个变量。
+
+---
+
+## 九、常见问题排查
 
 | 现象 | 原因 / 解决 |
 |---|---|
-| 打开网站空白 | 看浏览器控制台；确认 `docker compose ps` 两个服务都在跑 |
-| Office→PDF 报错 | 容器已内置 LibreOffice；手动部署需确认 `soffice` 在 PATH（`which soffice`） |
-| 音视频工具无反应 | ffmpeg.wasm 需要 COOP/COEP 头 + HTTPS（或 localhost）。确认用的是 nginx/Caddy 而非直接开文件 |
+| 前端 403 Forbidden | 静态文件在 `/root` 下 nginx 无权读。确认 `root` 指向 `/var/www/party2web/frontend/dist` 且 `chown -R www-data:www-data /var/www/party2web` |
+| 页面白屏、控制台报 `.mjs` MIME 错误 | nginx 缺少 `.mjs` 的 MIME 处理。用仓库的 `nginx.conf.example`（含 `location ~ \.mjs$` 块） |
+| 音视频工具报 `failed to import ffmpeg-core.js` | 旧版本从国外 CDN 加载核心。**本版本已自托管**：确认 `npm run build` 跑过、`/var/www/.../dist/ffmpeg/` 下有 `ffmpeg-core.js/.wasm`，且用 HTTPS 访问 |
+| 音视频工具无反应/报 SharedArrayBuffer | 缺 COOP/COEP 头或非 HTTPS。用仓库 nginx 配置并通过 https 访问 |
 | 上传大文件 413 | 提高 nginx `client_max_body_size` 和后端 `MAX_CONVERT_BYTES` |
-| 端口 80 被占用 | 改 compose 里 `ports: "8080:80"`，再用域名反代 |
-| 想重置管理员密码 | 改 `backend/.env` 里的 `ADMIN_PASSWORD` 后 `docker compose up -d backend`（重启即可，无需 rebuild） |
+| Office→PDF 报错 | 确认已装 LibreOffice：`which soffice`；中文乱码则装 `fonts-noto-cjk` |
+| 后端起不来 | `systemctl status party2web` 和 `journalctl -u party2web -n 50` 看日志；确认 `.env` 存在、`uv sync` 成功 |
+| npm/uv 下载太慢 | 用第二步的国内镜像 |
+| 想重置管理员密码 | 改 `backend/.env` 的 `ADMIN_PASSWORD`，`systemctl restart party2web` |
 
 ---
 
-## 安全清单（上线前务必检查）
+## 十、数据备份 & 安全清单
 
-- [ ] 已修改默认管理员密码（`ADMIN_PASSWORD`）
-- [ ] 已修改 `SECRET_KEY` 为随机值
-- [ ] 服务器防火墙仅放行 22/80/443
-- [ ] 已开启 HTTPS（生产强烈建议）
+**备份**（SQLite 数据库 + 上传文件都在 `backend/data/`）：
+
+```bash
+tar czf party2web-backup-$(date +%F).tar.gz /root/opt/party2web/backend/data
+```
+
+**上线前检查：**
+
+- [ ] `backend/.env` 已设置强 `ADMIN_PASSWORD` 与随机 `SECRET_KEY`
+- [ ] 防火墙仅放行 22/80/443
+- [ ] 已启用 HTTPS
 - [ ] 定期备份 `backend/data/`

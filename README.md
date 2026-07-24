@@ -35,7 +35,7 @@
 | 互动表单 | 管理员**自定义字段**（单行/多行/单选/多选）+ 结果导出 CSV |
 | 工具打开方式 | **弹窗**（Modal） |
 | 站点名称/位置 | 管理员在设置中填写，全站生效 |
-| 部署 | Linux VPS（Docker 打包 LibreOffice + ffmpeg 系统依赖） |
+| 部署 | Linux VPS 手动部署（uv + systemd + nginx；系统装 LibreOffice + ffmpeg） |
 
 > 前端线稿（低保真，11 屏）已确认。
 
@@ -67,7 +67,9 @@ Party2Web/
 │   │       ├── site.py         # 站点信息
 │   │       └── convert.py      # 后端转换任务提交/轮询/下载
 │   ├── data/               # SQLite 文件、上传目录（运行时生成）
-│   └── Dockerfile
+│   └── .env.example        # 管理员密码/密钥模板（复制为 .env）
+├── nginx.conf.example      # 服务器 nginx 站点配置参考
+├── update.sh               # 服务器一键更新脚本
 └── frontend/               # Vite + React + TS + AntD
     ├── package.json
     ├── vite.config.ts
@@ -179,7 +181,7 @@ npm run dev                   # 默认 http://localhost:5173，代理 /api → :
 
 **管理员**：任意页 → 侧栏底部「设置」→ 开启管理员模式 → 输入账号密码。凭据由环境变量配置：复制 `backend/.env.example` 为 `backend/.env` 并填入 `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `SECRET_KEY`（未配置时本地默认 `root` / `admin`）。
 
-**部署（Linux VPS）**：最简方式是根目录下 `docker compose up -d --build` 一键起前后端（后端镜像内置 `libreoffice` + `ffmpeg`，前端 nginx 托管构建产物并反代 `/api`、`/uploads`，且发送 ffmpeg.wasm 所需的 COOP/COEP 头）。完整分步指南见 **[DEPLOYMENT.md](./DEPLOYMENT.md)**（含域名 + HTTPS、备份、以及不依赖 Docker 的手动部署方案）。
+**部署（Linux VPS）**：采用**手动部署**（后端 uv + systemd，前端构建产物由 nginx 托管并反代 `/api`、`/uploads`）。完整分步指南见 **[DEPLOYMENT.md](./DEPLOYMENT.md)**，含域名 DNS、HTTPS、nginx 配置（`.mjs` MIME 与 COOP/COEP 已处理）、以及一键更新脚本 `update.sh`。ffmpeg.wasm 核心与 pdf.js 均自托管/同源，不依赖国外 CDN。
 
 ---
 

@@ -1,0 +1,81 @@
+# 便利工具站 · nginx 站点配置参考
+# 放到 /etc/nginx/sites-available/party2web，再软链到 sites-enabled，然后 nginx -t && systemctl reload nginx
+# 把 your-domain.com 与证书路径换成你自己的。
+
+# 强制 HTTP → HTTPS
+server {
+    listen 80;
+    server_name your-domain.com;
+    return 301 https://$server_name$request_uri;
+}
+
+# HTTPS 主服务
+server {
+    listen 443 ssl http2;
+    server_name your-domain.com;
+
+    # ---- 证书路径（换成你的证书文件）----
+    ssl_certificate     /etc/ssl/your-domain/your-domain_bundle.crt;
+    ssl_certificate_key /etc/ssl/your-domain/your-domain.key;
+
+    # ---- SSL 优化 ----
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_ecdh_curve X25519:prime256v1:secp384r1;
+
+    # 某些网络环境下关闭 sendfile 可避免连接重置
+    sendfile off;
+
+    # ---- 前端静态文件根目录（nginx 需有读权限，勿放在 /root 下）----
+    root /var/www/party2web/frontend/dist;
+    index index.html;
+
+    # ffmpeg.wasm / pdf.js 所需的跨源隔离头
+    add_header Cross-Origin-Opener-Policy same-origin always;
+    add_header Cross-Origin-Embedder-Policy credentialless always;
+
+    # 最大上传大小（与后端 MAX_CONVERT_BYTES 对应，留余量）
+    client_max_body_size 120m;
+
+    # ========== 关键：强制 .mjs 的 MIME 类型 ==========
+    # pdf.js 的 worker 是 .mjs，nginx 默认 MIME 会导致模块加载失败
+    location ~ \.mjs$ {
+        default_type application/javascript;
+        add_header Content-Type application/javascript;
+        add_header Cross-Origin-Opener-Policy same-origin always;
+        add_header Cross-Origin-Embedder-Policy credentialless always;
+        try_files $uri =404;
+    }
+
+    # 后端 API
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        proxy_buffering off;
+    }
+
+    # 上传文件
+    location /uploads/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        proxy_buffering off;
+    }
+
+    # SPA 路由回退
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

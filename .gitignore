@@ -10,6 +10,7 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/public/ffmpeg/
 *.tsbuildinfo
 
 # Deploy artifacts
