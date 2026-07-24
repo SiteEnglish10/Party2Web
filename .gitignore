@@ -1,0 +1,27 @@
+# Python
+backend/.venv/
+backend/data/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+
+# Deploy artifacts
+deploy/
+party2web-deploy.zip
+
+# Env / secrets  (.env.example 保留在仓库里作模板)
+.env
+.env.local
+.env.*.local
+
+# Editor / OS
+.DS_Store
+.idea/
+*.log
