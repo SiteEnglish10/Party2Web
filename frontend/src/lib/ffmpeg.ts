@@ -1,9 +1,9 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { toBlobURL } from "@ffmpeg/util";
 
-// 自托管 ffmpeg core（单线程 UMD 版）：由 scripts/copy-ffmpeg.mjs 复制到 public/ffmpeg/，
-// 构建后随前端一起托管在本站同源路径 /ffmpeg/，不依赖 unpkg 等国外 CDN
-//（否则会报 "failed to import ffmpeg-core.js"）。
+// 自托管 ffmpeg core（ESM 单线程版）：由 scripts/copy-ffmpeg.mjs 复制到 public/ffmpeg/，
+// 构建后随前端一起托管在本站同源路径 /ffmpeg/，不依赖 unpkg 等国外 CDN。
+// 注意：@ffmpeg/ffmpeg 0.12 的 worker 是 module 类型，会用 `await import(coreURL)` 加载核心，
+// 因此必须是 ESM 版核心，且直接用同源 URL 引入（无需 toBlobURL）。
 const CORE_BASE = "/ffmpeg";
 
 let ffmpeg: FFmpeg | null = null;
@@ -18,10 +18,9 @@ export async function getFFmpeg(onProgress?: (ratio: number) => void): Promise<F
     if (onProgress) {
       inst.on("progress", ({ progress }) => onProgress(Math.min(1, progress)));
     }
-    // toBlobURL 把同源资源转成 blob URL，供内部 worker 加载
     await inst.load({
-      coreURL: await toBlobURL(`${CORE_BASE}/ffmpeg-core.js`, "text/javascript"),
-      wasmURL: await toBlobURL(`${CORE_BASE}/ffmpeg-core.wasm`, "application/wasm"),
+      coreURL: `${CORE_BASE}/ffmpeg-core.js`,
+      wasmURL: `${CORE_BASE}/ffmpeg-core.wasm`,
     });
     ffmpeg = inst;
     return inst;

@@ -5,7 +5,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const srcDir = join(root, "node_modules", "@ffmpeg", "core", "dist", "umd");
+// 必须用 ESM 版核心：@ffmpeg/ffmpeg 0.12 的 worker 是 module 类型，
+// 通过 `await import(coreURL)` 加载核心，需要 ESM 的 `export default`（UMD 版会报 failed to import）。
+const srcDir = join(root, "node_modules", "@ffmpeg", "core", "dist", "esm");
 const outDir = join(root, "public", "ffmpeg");
 
 mkdirSync(outDir, { recursive: true });
