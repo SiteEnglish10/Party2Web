@@ -69,7 +69,7 @@ Party2Web/
 │   ├── data/               # SQLite 文件、上传目录（运行时生成）
 │   └── .env.example        # 管理员密码/密钥模板（复制为 .env）
 ├── nginx.conf.example      # 服务器 nginx 站点配置参考
-├── update.sh               # 服务器一键更新脚本
+├── update.sh.example       # 服务器一键更新脚本模板（服务器上复制为 update.sh 并改路径）
 └── frontend/               # Vite + React + TS + AntD
     ├── package.json
     ├── vite.config.ts

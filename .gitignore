@@ -17,6 +17,9 @@ frontend/public/ffmpeg/
 deploy/
 party2web-deploy.zip
 
+# 服务器本地更新脚本（含机器专属路径，只保留模板 update.sh.example）
+update.sh
+
 # Env / secrets  (.env.example 保留在仓库里作模板)
 .env
 .env.local

@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# 云端服务器一键更新脚本（手动部署方式）
-# 用法：在服务器上 chmod +x update.sh，然后 ./update.sh
-# 作用：拉取最新代码 → 更新后端依赖 → 构建前端 → 部署 dist 到 nginx 目录 → 重启后端 + 重载 nginx
+# 云端服务器一键更新脚本【模板】
+# 用法：在服务器上执行
+#   cp update.sh.example update.sh   # 复制成本地版（update.sh 已被 .gitignore 忽略，不会进仓库）
+#   nano update.sh                   # 按你的实际路径改下面三个变量
+#   chmod +x update.sh && ./update.sh
 set -euo pipefail
 
-# ==== 按你的实际路径修改这三项 ====
+# ==== 按你的服务器实际路径修改这三项 ====
 REPO="/root/opt/party2web"                       # 代码仓库位置
 WEBROOT="/var/www/party2web/frontend/dist"       # nginx 静态根目录（须 nginx 可读，勿放 /root 下）
 SERVICE="party2web"                              # 后端 systemd 服务名
-# ==================================
+# ========================================
 
 echo "==> 拉取最新代码"
 cd "$REPO"

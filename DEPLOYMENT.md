@@ -202,18 +202,22 @@ systemctl reload nginx
 
 ## 八、日常更新（一键脚本）
 
-以后本地改完代码 `git push` 后，在**服务器**上更新只需：
+仓库里只提供**模板** `update.sh.example`（不含机器专属路径）。**首次**在服务器上生成你自己的本地脚本（`update.sh` 已被 `.gitignore` 忽略，不会进仓库、也不会被 `git pull` 覆盖）：
 
 ```bash
 cd /root/opt/party2web
-git pull                 # 首次用脚本前先拉一次，拿到 update.sh
+cp update.sh.example update.sh
+nano update.sh            # 按你的实际路径改顶部 REPO / WEBROOT / SERVICE 三个变量
 chmod +x update.sh
-./update.sh
 ```
 
-`update.sh` 会自动完成：拉取代码 → `uv sync` → `npm install && npm run build` → 把 `dist` 同步到 `/var/www/...` → 重启后端 → 重载 nginx。
+以后本地改完代码 `git push` 后，在**服务器**上更新只需一条命令：
 
-> 若你的路径与脚本默认值不同，编辑 `update.sh` 顶部的 `REPO` / `WEBROOT` / `SERVICE` 三个变量。
+```bash
+cd /root/opt/party2web && ./update.sh
+```
+
+它会自动完成：拉取代码 → `uv sync` → `npm install && npm run build` → 把 `dist` 同步到 `/var/www/...` → 重启后端 → 重载 nginx。
 
 ---
 
